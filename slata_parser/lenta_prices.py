@@ -1,24 +1,22 @@
 import random
 import time
-
+from datetime import datetime
 import requests
+import xlsxwriter
 from bs4 import BeautifulSoup
 import re
-import pandas as pd
 
-LINES = [
-    'https://lenta.com/catalog/hleb-i-hlebobulochnye-izdeliya/'
-]
-
-# Путь до сохраняемого файла
-file_path = './result_price.xlsx'
+# Ссылки для парсинга
+LINKS = []
 
 # Обход защиты: прикинуться браузером
 HEADERS = {'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)'
                          ' Chrome/86.0.4240.185 YaBrowser/20.11.2.78 Yowser/2.5 Safari/537.36', 'accept': '*/*'}
 
+
 # Интервалы для таймаута между запросами по категориям
-times = [30, 10, 22, 15, 15, 11, 20, 34]
+big_pauses = [30, 10, 22, 15, 15, 11, 20, 34]
+small_pauses = [2, 1, 4, 2, 3, 5, 2, 1, 2]
 
 # Исходники для создания словаря с полученными данными,
 # которые будут выгружены в xlsx-файл
@@ -32,25 +30,28 @@ products_data = {
 }
 
 
-#  Запись полученных данных в xlsx-файл
-def write_exel(data):
-    df = pd.DataFrame(data)
-    df.to_excel(file_path, index=False)
-    print('Документ собрался')
-
-
 # Создание списка ссылок на разделы каталога
 def get_links_list(url):
     response = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(response.text, 'html.parser')
-    link_list = []
     for link in soup.find_all('a'):
         l = link.get('href')
-        if '/catalog/' in str(l):
-            link_list.append(l)
-    with open('list.txt', 'w') as file:
-        for item in link_list:
-            file.write("%s\n" % ('https://lenta.com' + item))
+        if '/catalog/' in str(l) and str(l) != '/catalog/':
+            LINKS.append('https://lenta.com'+l)
+
+
+# Запись результатов в exel
+def exel(products_dict):
+    cur_date = datetime.now().date().strftime('%d.%m.%Y')
+    workbook = xlsxwriter.Workbook(f'{cur_date} Прайс-лист "Лента".xlsx')
+    worksheet = workbook.add_worksheet()
+    col_num = 0
+    for key, value in products_dict.items():
+        worksheet.write(0, col_num, key)
+        worksheet.write_column(1, col_num, value)
+        col_num += 1
+    print(f'Создан файл {workbook.filename}')
+    workbook.close()
 
 
 # Получение количества страниц пагинации в разделе
@@ -98,11 +99,11 @@ def get_content(html):
 
 # Запуск парсинга по страницам, указанным в файле-списке
 def parse():
-    # # with open('categories_list.txt') as file:
-    # with open('links_list.txt') as file:
-    #     lines = file.read().splitlines()
-    #     for line in lines:
-    for line in LINES:
+    for line in LINKS:
+        timeout = random.choice(big_pauses)
+        print(f'Пожалуйста, подождите, у нас тайм-аут: {timeout}')
+        time.sleep(timeout)
+        print('Поехали дальше')
         try:
             print(f'Зашли на страницу {line}')
             html = get_html(line)
@@ -110,23 +111,30 @@ def parse():
                 pages_count = int(get_pages_count(html))
                 print(f'Страница {line} имеет пагинатор {pages_count} страниц')
                 for i in range(1, pages_count + 1):
+                    timeout_min = random.choice(small_pauses)
+                    print(f'Пожалуйста, подождите, у нас мини-тайм-аут: {timeout_min}')
+                    time.sleep(timeout_min)
                     pages_url = f'{line}?page={i}'
-                    print(f'Парсим {pages_url}')
+                    print(f'Собираю цены на странице: {pages_url}')
                     pages_html = get_html(pages_url, params=None)
                     get_content(pages_html.text)
-                timeout = random.choice(times)
-                print(f'Начинаю таймаут {timeout}')
-                time.sleep(timeout)
-                print('Поехали дальше')
             else:
                 print('Error')
         except Exception as e:
             print(f'Error: не могу открыть страницу {line}')
 
 
-# print(products_data)
-parse()
-write_exel(products_data)
+def run():
+    # Получить актуальные разделы каталога
+    get_links_list('https://lenta.com/catalog/')
+    parse()
+    exel(products_data)
 
-# Полусить актуальные разделы каталога
-# get_links_list('https://lenta.com/catalog/')
+
+if __name__ == '__main__':
+    print('Поехали!')
+    run()
+    print('Программа выполнена')
+
+
+
